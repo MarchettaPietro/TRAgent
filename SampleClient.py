@@ -3,6 +3,7 @@
 import xmlrpclib
 import time
 import ast
+import json
 import pprint
 
 from optparse import OptionParser
@@ -27,22 +28,27 @@ if __name__ == "__main__":
 	
 	id =  s.submit(query)
 	if id<0:
-		print id
+		print "Obtained measurement ID: ", id
 		sys.exit(1)
 		
-	status = ['ongoing']
+	res = {'status':['ongoing'], 'erros':[]}
 	
-	print "%s %s"%("#Status", "Process")
-	while status[0] == ['ongoing']:
-		status = s.status(id)
-		print status
-		time.sleep(10)
+	print "%s"%("#Status")
+	#while status[0] == ['ongoing']:
+	while res["status"][0] != "success" and res["status"][0] != "failed":
+		res = s.status(id)
+		print res
+		time.sleep(2)
 
-	print status
-	#if status[0]=="FINISHED":
-	res = s.results(id)
-	dic = ast.literal_eval(res[0])
-	pprint.pprint(dic)
-	
+	print res
+	if res["status"][0] == "success":
+		res = s.results(id)
+		print res
+		dd = json.loads(res['result'][0])
+		pprint.pprint(dd)
+		
+		#dic = ast.literal_eval(res['result'])
+		#pprint.pprint(dic)
+		
 
 
