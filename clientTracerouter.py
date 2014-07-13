@@ -29,6 +29,8 @@ import base64
 import sqlite3
 import cPickle
 
+from Dispatcher import Dispatcher
+
 # si basa su un database sqlite in cui memorizza tutti i risultati delle analisi: una tabella id misura, status, risultato, json risultato, raw result
 # usa l'approccio sottometti e ritorna dopo 
 
@@ -98,15 +100,30 @@ class Tracerouter(object):
 			
 			#check if database exists
 			if not self.databaseExists():
-				
-				#crea database if not exists
-				conn = sqlite3.connect(self.__common['db.path'])
-				c = conn.cursor()				
-				#crea table #id misura che e' row_id non va specificato, status, errors, json risultato, raw result
-				c.execute('''CREATE TABLE traceroutes (mid integer primary key autoincrement, status text, target text, errors text, json text, raw text)''')
-				conn.commit()
-				conn.close()
 
+				conn = None
+				cc = None
+				try:
+					#crea database if not exists
+					conn = sqlite3.connect(self.__common['db.path'])
+					cc = conn.cursor()				
+					#crea table #id misura che e' row_id non va specificato, status, errors, json risultato, raw result
+					cc.execute('''CREATE TABLE traceroutes (mid integer primary key autoincrement, status text, target text, errors text, hops text, raw text)''')
+					conn.commit()
+					conn.close()
+				except:
+					self.logerror("Not able to create the table")
+				finally:
+					if cc:
+						cc.close()
+					if conn:
+						conn.close()
+						
+			#create a dispacter and share the queue
+			self.__Dispatcher = Dispatcher(self.__requests, self.__logger, self.__common)
+			self.__Dispatcher.start()	
+			
+			
 				
 		def databaseExists(self):
 			""" check if db.path exists """
@@ -139,6 +156,7 @@ class Tracerouter(object):
 			
 			self.loginfo(str(request))			
 			conn = None
+			cc = None
 			
 			#check on request target (valid IP address)
 			try:
@@ -163,6 +181,7 @@ class Tracerouter(object):
 					
 				conn.commit()
 
+				
 			except Exception, ee:
 				request['status'] != "failed"
 				request['errors'].append(str(ee))
@@ -170,6 +189,9 @@ class Tracerouter(object):
 				request['id'] = -1
 				
 			finally:
+				if cc:
+					cc.close()
+					
 				if conn:
 					conn.close()
 				self.__mutex.release()
@@ -190,16 +212,16 @@ class Tracerouter(object):
 				conn = sqlite3.connect(self.__common["db.path"])
 				cc = conn.cursor()
 				cc.execute('SELECT status FROM traceroutes WHERE rowid=:rowid', {'rowid':m_id})
-				res['status'] = cur.fetchone()
+				res['status'] = cc.fetchone()
 			
 			except Exception, ee:
-				logerror("Status Error:")
+				self.logerror("Status Error:")
 				res['errors'].append(str(ee))
+				res['status'] = 'error'
 
 			finally:
 				if cc:
 					cc.close()
-					
 				if conn:
 					conn.close()
 				
@@ -218,8 +240,8 @@ class Tracerouter(object):
 			try:
 				conn = sqlite3.connect(self.__common["db.path"])
 				cc = conn.cursor()
-				cc.execute('SELECT json FROM traceroutes WHERE rowid=%s', m_id)
-				res['result'] = cur.fetchone()
+				cc.execute('SELECT json FROM traceroutes WHERE rowid=:rowid', {'rowid':m_id})
+				res['result'] = cc.fetchone()
 			
 			except Exception, ee:
 				self.logerror("Results Error:")
@@ -260,6 +282,12 @@ class Tracerouter(object):
 			try:
 				server.serve_forever()				
 			except KeyboardInterrupt:
+				self.loginfo('Closing Dispatcher..')
+				self.__Dispatcher.stopme()
+				while self.__Dispatcher.isAlive():
+					self.__Dispatcher.join(5)
+					self.loginfo('Closing Dispatcher..')
+				
 				self.loginfo('Quitting..')
 			
 			
