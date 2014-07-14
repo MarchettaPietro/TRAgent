@@ -17,7 +17,7 @@ import sys
 import logging
 import sqlite3
 
-""" Launch and parse traceroutes from planetlab nodes """
+""" Launch and parse traceroutes from planetlab nodes through an ssh connection """
 
 #FROM THIS:
 
@@ -81,10 +81,36 @@ class TracerouteManager(threading.Thread):
 		self.loginfo("Stopping.")
 		self.__stop = True
 		
+	def remove_node(self, vp):
+		""" set as unactive a node in case of failure """
+		cc = None
+		conn = None
+
+		try:
+			#udpate request
+			conn = sqlite3.connect(self.__common["db.path"])
+			cc = conn.cursor()			
+			cc.execute("""UPDATE vps SET active=0 WHERE vp=? """, (vp))
+			conn.commit()
+			
+		except Exception, ee:
+			self.__request['status'] != "failed"
+			self.__request['errors'].append(str(ee))
+			self.logerror("Failure: "+json.dumps(self.__request))
+
+		finally:
+			if cc:
+				cc.close()
+				
+			if conn:
+				conn.close()		
 		
 	def update_db(self):
 		"""Update destination request in db"""
 		
+		cc = None
+		conn = None
+
 		try:
 			#udpate request
 			conn = sqlite3.connect(self.__common["db.path"])
@@ -97,7 +123,7 @@ class TracerouteManager(threading.Thread):
 		except Exception, ee:
 			self.__request['status'] != "failed"
 			self.__request['errors'].append(str(ee))
-			self.logerror("Failure: "+json.dumps(request))
+			self.logerror("Failure: "+json.dumps(self.__request))
 
 		finally:
 			if cc:
@@ -131,13 +157,17 @@ class TracerouteManager(threading.Thread):
 
 
 	def run (self):
-		"""Launch classic traceroute toward the destination """
+		"""Launch remotely a classic traceroute toward the destination """
 		
 		self.loginfo("Tracerouting")
 		child = None
 		self.__request["status"] = "tracerouting"
 		try:
-			child = pexpect.spawn("sudo traceroute -f "+self.__common["first_ttl"]+ " -m "+self.__common["max_ttl"]+ " -n "+self.__request["target"])
+			#child = pexpect.spawn("sudo traceroute -f "+self.__common["first_ttl"]+ " -m "+self.__common["max_ttl"]+ " -n "+self.__request["target"])
+			cmd = "ssh -tt -l "+self.__common["remotel"]+" "+ self.__request['vp'] + " \"traceroute -n "+self.__request["target"]+" \" "
+			self.loginfo(cmd)
+			
+			child = pexpect.spawn(cmd)
 			ris = child.expect([pexpect.EOF, "\$"], timeout=int(self.__common["timeout"]))
 			tr_output = child.before
 			#with open('tr_prova', 'r') as content_file:
@@ -156,7 +186,8 @@ class TracerouteManager(threading.Thread):
 		except Exception, ee:
 			self.__request['status'] != "failed"
 			self.__request['errors'].append(str(ee))
-			self.logerror("Failure: "+json.dumps(request))
+			self.logerror("Failure: "+json.dumps(self.__request))
+			self.remove_node(self.__request['vp'])
 			self.update_db()
 
 		finally:
@@ -166,6 +197,7 @@ class TracerouteManager(threading.Thread):
 				child.close()		
 		
 		self.loginfo("Quitting")
+
 
 
 
@@ -204,7 +236,7 @@ if __name__ == '__main__':
 	handler.setFormatter(formatter)
 	logger.addHandler(handler)
 	
-	request = {'status':"ongoing", 'target':"143.225.229.127", 'errors':[], 'id':11}
+	request = {'status':"ongoing", 'target':"143.225.229.127", 'errors':[], 'id':11, 'vp':'host2.planetlab.informatik.tu-darmstadt.de'}
 	
 	conn = None
 	cc = None
@@ -214,7 +246,7 @@ if __name__ == '__main__':
 		cc = conn.cursor()
 
 		#pdata = cPickle.dumps(request, cPickle.HIGHEST_PROTOCOL)
-		cc.execute('INSERT INTO traceroutes (status,target, errors,json,raw) VALUES (?,?,?,?,?)', (request['status'],request['target'],"|".join(request['errors']), json.dumps(request), ''))
+		cc.execute('INSERT INTO traceroutes (status, vp, target, errors,json,raw) VALUES (?,?,?,?,?)', (request['status'],request["vp"], request['target'],"|".join(request['errors']), json.dumps(request), ''))
 		if request['status'] != "failed":
 			request['id'] = cc.lastrowid
 		conn.commit()
