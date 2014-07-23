@@ -1,11 +1,11 @@
 # ===================================================================
-# @(#)Traceroute Platform PROJECT
-# @(#)Dispatcher.py
+# @(#)TRAgent PROJECT
 #
 # @author Pietro Marchetta
 #               (pietro.marchetta@unina.it)
-# @date  16/12/2013
+# @date  15/07/2014
 # ===================================================================
+
 
 import threading
 import time

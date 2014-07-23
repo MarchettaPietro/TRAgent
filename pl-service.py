@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 # ===================================================================
-# @(#)Traceroute Platform PROJECT
-# @(#)pl-service.py
+# @(#)TRAgent PROJECT
 #
 # @author Pietro Marchetta
 #               (pietro.marchetta@unina.it)
-# @date  7/2014
+# @date  15/07/2014
 # ===================================================================
+
 
 """
 XML-RPC interface for a Planetlab Tracerouter service
@@ -165,7 +165,7 @@ class PLService(object):
 				return False
 		
 
-		def active(self, asn=0):
+		def active(self, asn=None):
 			""" return all the active vps """
 			
 			cc = None
@@ -180,7 +180,7 @@ class PLService(object):
 				conn = sqlite3.connect(self.__common["db.path"])
 				cc = conn.cursor()
 				
-				if asn == 0:
+				if not asn:
 					cc.execute('SELECT vp, asn FROM  vps WHERE active==1')
 				else:
 					#cc.execute('SELECT vp, asn FROM  vps WHERE active==1 AND asn==?', int(asn))
@@ -345,7 +345,7 @@ class PLService(object):
 			except Exception, ee:
 				self.logerror("Status Error:")
 				res['errors'].append(str(ee))
-				res['status'] = 'error'
+				res['status'] = 'failed'
 
 			finally:
 				if cc:
