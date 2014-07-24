@@ -22,15 +22,17 @@ import sys
 import logging
 import logging.config
 import Queue
+import MySQLdb as mdb
 
 import SocketServer
 import base64
-import sqlite3
+#import sqlite3
 import cPickle
 
 from Dispatcher import Dispatcher
+from DBManager import DBManager
 
-# si basa su un database sqlite in cui memorizza tutti i risultati delle analisi: una tabella id misura, status, risultato, json risultato, raw result
+# si basa su un database mysql in cui memorizza tutti i risultati delle analisi: una tabella id misura, status, risultato, json risultato, raw result
 # usa l'approccio sottometti e ritorna dopo 
 # interagisce direttamente con il nodo planetlab per lanciare traceroute tramite connessione ssh (no sudo)
 # fornisce i metodi: status, results, ases, submit
@@ -94,39 +96,20 @@ class PLService(object):
 			self.__logger = logger
 			self.auth_map = auth_map
 			self.__common = common
-			self.__requests = Queue.Queue(0)
-			
+			self.__requests = Queue.Queue(0)			
 			self.__mutex = threading.Lock()
 			
-			#check if database exists
-			if not self.databaseExists():
+			
+			self.__dbmanager = DBManager(self.__common)			
+			
+			sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int,  primary key(vp) )'
+			self.logdebug(sql)
+			self.__dbmanager.execute(sql)
+			
+			sql = 'CREATE TABLE IF NOT EXISTS traceroutes (mid int auto_increment, status text, vp text, target text, errors text, json text, raw text, primary key (mid))'
+			self.logdebug(sql)
+			self.__dbmanager.execute(sql)
 
-				conn = None
-				cc = None
-				try:
-					#crea database if not exists
-					conn = sqlite3.connect(self.__common['db.path'])
-					cc = conn.cursor()				
-
-					#crea table vps #hostname #as, active 
-					cc.execute('''CREATE TABLE vps (vp text primary key, asn integer, active integer)''')
-					#cc.execute('''INSERT INTO  vps (vp, asn, active) VALUES (?,?,?)''', ('host2.planetlab.informatik.tu-darmstadt.de', 137, 1))
-					#cc.execute('''INSERT INTO  vps (vp, asn, active) VALUES (?,?,?)''', ('143.225.229.127', 137, 1))
-					
-					#crea table #id misura che e' row_id non va specificato, status, errors, json risultato, raw result
-					cc.execute('''CREATE TABLE traceroutes (mid integer primary key autoincrement, status text, vp text, target text, errors text, json text, raw text)''')
-					
-					conn.commit()					
-					conn.close()
-					
-				except:
-					self.logerror("Not able to create the tables")
-				finally:
-					if cc:
-						cc.close()
-					if conn:
-						conn.close()
-						
 			#create a dispacter and share the queue
 			self.__Dispatcher = Dispatcher(self.__requests, self.__logger, self.__common)
 			self.__Dispatcher.start()	
@@ -145,102 +128,69 @@ class PLService(object):
 			self.__logger.debug("[Main] " +text)		
 						
 				
-		def databaseExists(self):
-			""" check if db.path exists """
-			from os.path import isfile, getsize
-			
-			if not isfile(self.__common["db.path"]):
-				return False
-
-			if getsize(self.__common["db.path"]) < 100: # SQLite database file header is 100 bytes
-				return False
-			else:
-				fd = open(self.__common["db.path"], 'rb')
-				Header = fd.read(100)
-				fd.close()
-			
-			if Header[0:16] == 'SQLite format 3\000':
-				return True
-			else:
-				return False
-		
 
 		def active(self, asn=None):
 			""" return all the active vps """
-			
-			cc = None
-			conn = None
-			
-			#code is negative when there are failures
 			request = {'errors':[], 'result':[], 'code':-1} 
 			
-			vps = []
+			if not asn:
+				sql = 'SELECT vp, asn FROM vps WHERE active=1'
+			else:
+				sql = 'SELECT vp, asn FROM  vps WHERE active=1 AND asn=%s'%(str(asn))
+
+			self.logdebug(sql)
+			cc = None
 			try:
-				#create a new row and take the id		
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-				
-				if not asn:
-					cc.execute('SELECT vp, asn FROM  vps WHERE active==1')
-				else:
-					#cc.execute('SELECT vp, asn FROM  vps WHERE active==1 AND asn==?', int(asn))
-					cc.execute('SELECT vp, asn FROM  vps WHERE active==1 AND asn==:asn', {'asn':int(asn)})
-					
+				cc = self.__dbmanager.execute(sql)
 				vps = cc.fetchall()
 				request['code'] = 1 #success
 				request['result'] = vps
 				
-			except Exception, ee:
+			except Exception, ex:
 				request['code'] != -1
-				request['errors'].append(str(ee))
-				self.logerror("Failure: "+json.dumps(request))
-				
-				
+				request['errors'].append(str(ex))
+				self.logerror("Failure: "+json.dumps(request))			
+			
 			finally:
-				if cc:	cc.close()
-				if conn: conn.close()
-
+				if cc:
+					cc.close()
+					
 			return request
 
 
 		def ases(self):
 			""" return the as numbers where active vps are located """
 			
-			cc = None
-			conn = None
-			
-			#code is negative when there are failures
 			request = {'errors':[], 'result':[], 'code':-1} 
-			
-			ases = []
+
+			sql = 'SELECT asn FROM vps WHERE active=1'
+			cc = None
+			self.logdebug(sql)			
 			try:
-				#create a new row and take the id		
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-
-				cc.execute('SELECT asn FROM  vps WHERE active==1')
-				ases = cc.fetchall()
+				cc = self.__dbmanager.execute(sql)
+				asn = cc.fetchall()
 				request['code'] = 1 #success
-				request['result'] = [x[0] for x in ases]
+				request['result'] = [x[0] for x in asn]
 				
-			except Exception, ee:
+			except Exception, ex:
 				request['code'] != -1
-				request['errors'].append(str(ee))
-				self.logerror("Failure: "+json.dumps(request))
-				
-				
-			finally:
-				if cc:	cc.close()
-				if conn: conn.close()
+				request['errors'].append(str(ex))
+				self.logerror("Failure: "+json.dumps(request))			
 
+			finally:
+				if cc:
+					cc.close()
+					
 			return request
+
 			
 		
 		def submit(self, vp, target):
 			""" create a new row in the database, create a new request (json object), put the new request in the queue shared with the workers  """
-			
+
 			self.loginfo(str((vp, target)))			
 			
+						
 			#create a new request
 			request = {'status':"ongoing", 'vp':vp, 'target':target, 'hops':[], 'errors':[], 'id':-1}
 			
@@ -252,30 +202,55 @@ class PLService(object):
 			except:
 				request['errors'].append('Not valid Target')
 				request['status'] = 'failed'
-		
+				
 
 			#check on the source
-			conn = None
+			sql = "SELECT * from vps where vp='%s'"%(request['vp'])
 			cc = None
-			
+			self.logdebug(sql)
 			try:
-				#create a new row and take the id		
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-				cc.execute('SELECT * from vps where vp=:vp', {'vp':request['vp']})
-				data = cc.fetchone()
+				cc = self.__dbmanager.execute(sql)
+				data = cc.fetchone()				
 				
 				if data is None:
 					request['status'] = 'failed'
 					request['id'] = -1
 					request['errors'].append('Not valid vantage point')
 					self.logerror("Failure: "+json.dumps(request))
+
 				
 				elif data[2]==0:
 					request['status'] = 'failed'
 					request['id'] = -1
 					request['errors'].append('Not active vantage point')
 					self.logerror("Failure: "+json.dumps(request))
+
+
+			except Exception, ee:
+				request['status'] != "failed"
+				request['errors'].append(str(ee))
+				self.logerror("Failure: "+json.dumps(request))
+				request['id'] = -1
+			
+			finally:
+				if cc: cc.close()
+				
+
+
+			# submit
+			sql = 	"INSERT INTO traceroutes (status,vp,target, errors,json,raw) VALUES ('%s','%s','%s','%s','%s','%s')"%(request['status'],request['vp'], request['target'],"|".join(request['errors']), json.dumps(request), '')
+			self.logdebug(sql)
+			
+			cc = None
+			
+			self.__mutex.acquire()
+			try:
+				
+				cc = self.__dbmanager.execute(sql)
+
+				if request['status'] != "failed":
+					request['id'] = cc.lastrowid
+					self.__requests.put(request)			
 								
 			except Exception, ee:
 				request['status'] != "failed"
@@ -287,40 +262,6 @@ class PLService(object):
 				if cc:
 					cc.close()
 					
-				if conn:
-					conn.close()
-
-			
-
-			conn = None
-			cc = None
-			
-			#store in db
-			self.__mutex.acquire()
-			try:
-				#create a new row and take the id		
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-				cc.execute('INSERT INTO traceroutes (status,vp,target, errors,json,raw) VALUES (?,?,?,?,?,?)', (request['status'],request['vp'], request['target'],"|".join(request['errors']), json.dumps(request), ''))
-				if request['status'] != "failed":
-					request['id'] = cc.lastrowid
-					self.__requests.put(request)			
-					
-				conn.commit()
-
-				
-			except Exception, ee:
-				request['status'] != "failed"
-				request['errors'].append(str(ee))
-				self.logerror("Failure: "+json.dumps(request))
-				request['id'] = -1
-				
-			finally:
-				if cc:
-					cc.close()
-					
-				if conn:
-					conn.close()
 				self.__mutex.release()
 
 			self.logdebug(str(request))
@@ -330,16 +271,16 @@ class PLService(object):
 		def status(self, m_id):
 						
 			self.loginfo("Requested status of ("+str(m_id)+")")
-			conn = None
-			cc = None
-			
-			res = {'status':'', 'errors':[], 'code':-1}
 
+			res = {'status':'', 'errors':[], 'code':-1}
+			sql = "SELECT status FROM traceroutes WHERE mid=%s"%(str(m_id))
+			self.logdebug(sql)
+			
+			cc = None
 			try:
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-				cc.execute('SELECT status FROM traceroutes WHERE rowid=:rowid', {'rowid':m_id})
-				res['status'] = cc.fetchone()
+				cc = self.__dbmanager.execute(sql)
+				data = cc.fetchone()
+				res['status'] = data[0]
 				res['code'] = 1 #success
 			
 			except Exception, ee:
@@ -350,8 +291,6 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
-				if conn:
-					conn.close()
 				
 			return res
 				
@@ -359,17 +298,18 @@ class PLService(object):
 		def results(self, m_id):
 			
 			self.loginfo("Requested results for ("+str(m_id)+")")
+			res = {'result':'', 'errors':[], 'code':-1}
 			
-			conn = None
+			sql = 'SELECT json FROM traceroutes WHERE mid=%s'%(str(m_id))
+			self.logdebug(sql)
+			
 			cc = None
 			
-			res = {'result':'', 'errors':[], 'code':-1}
-
 			try:
-				conn = sqlite3.connect(self.__common["db.path"])
-				cc = conn.cursor()
-				cc.execute('SELECT json FROM traceroutes WHERE rowid=:rowid', {'rowid':m_id})
-				res['result'] = cc.fetchone()
+				cc = self.__dbmanager.execute(sql)
+				data = cc.fetchone()
+				cc.close()
+				res['result'] = data
 				res['code'] = 1 #success
 			
 			except Exception, ee:
@@ -379,10 +319,7 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
-					
-				if conn:
-					conn.close()
-				
+									
 			return res
 			
 	
@@ -393,7 +330,6 @@ class PLService(object):
 			server = MultithreadedXMLRPCServer((self.__common["querier.binding.host"], int(self.__common["querier.binding.port"])), requestHandler=SecuredHandler, logRequests=True, auth_map=self.auth_map)
 			
 			#server = MultithreadedXMLRPCServer((socket.gethostbyname(socket.gethostname()), int(self.__common["querier.binding.port"])), requestHandler=SecuredHandler, logRequests=True, auth_map=self.auth_map)
-			
 						
 			server.register_function(self.submit, 'submit')
 			server.register_function(self.status, 'status')			

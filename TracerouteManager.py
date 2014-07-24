@@ -1,11 +1,10 @@
 #!/usr/bin/env python
 # ===================================================================
-# @(#)Traceroute Platform PROJECT
-# @(#)QueryManager.py
+# @(#)TRAgent PROJECT
 #
 # @author Pietro Marchetta
 #               (pietro.marchetta@unina.it)
-# @date  16/12/2013
+# @date  15/07/2014
 # ===================================================================
 
 import threading
@@ -15,7 +14,10 @@ import re
 import pexpect
 import sys
 import logging
-import sqlite3
+#import sqlite3
+import MySQLdb as mdb
+
+from DBManager import DBManager
 
 """ Launch and parse traceroutes from planetlab nodes through an ssh connection """
 
@@ -59,6 +61,7 @@ class TracerouteManager(threading.Thread):
 		self.__raw = '' #raw result for traceroute
 		self.__logger = logger
 		self.__common = common
+		self.__dbmanager = DBManager(self.__common)
 		
 		self.__stop = False
 		
@@ -83,16 +86,14 @@ class TracerouteManager(threading.Thread):
 		
 	def remove_node(self, vp):
 		""" set as unactive a node in case of failure """
-		cc = None
-		conn = None
 
+		cc = None
+		sql = "UPDATE vps SET active=0 WHERE vp=%s"%(vp)
+		self.logdebug(sql)
+				
 		try:
-			#udpate request
-			conn = sqlite3.connect(self.__common["db.path"])
-			cc = conn.cursor()			
-			cc.execute("""UPDATE vps SET active=0 WHERE vp=? """, (vp))
-			conn.commit()
-			
+			cc = self.__dbmanager.execute(sql)
+		
 		except Exception, ee:
 			self.__request['status'] != "failed"
 			self.__request['errors'].append(str(ee))
@@ -102,23 +103,17 @@ class TracerouteManager(threading.Thread):
 			if cc:
 				cc.close()
 				
-			if conn:
-				conn.close()		
 		
 	def update_db(self):
 		"""Update destination request in db"""
 		
 		cc = None
-		conn = None
-
+		sql = "UPDATE traceroutes SET status='%s', errors='%s', json='%s', raw='%s' WHERE mid=%s"%(self.__request['status']," ".join(self.__request['errors']), json.dumps(self.__request), self.__raw, self.__request["id"])
+		#sql = "UPDATE traceroutes SET status='%s', errors='%s', json=`%s`, raw=`%s` WHERE mid=%s"%(self.__request['status']," ".join(self.__request['errors']), "", self.__raw, self.__request["id"])
+		self.logdebug(sql)
+		
 		try:
-			#udpate request
-			conn = sqlite3.connect(self.__common["db.path"])
-			cc = conn.cursor()
-			
-			cc.execute("""UPDATE traceroutes SET status=?, errors=?, json=?, raw=? WHERE rowid=? """, (self.__request['status'],"|".join(self.__request['errors']), json.dumps(self.__request), self.__raw,self.__request["id"]))
-				
-			conn.commit()
+			cc = self.__dbmanager.execute(sql)
 			
 		except Exception, ee:
 			self.__request['status'] != "failed"
@@ -128,10 +123,7 @@ class TracerouteManager(threading.Thread):
 		finally:
 			if cc:
 				cc.close()
-				
-			if conn:
-				conn.close()
-			
+							
 		
 	def parser_tr_output(self,tr_output):
 		"""Parser for the traceroute output"""
@@ -161,10 +153,10 @@ class TracerouteManager(threading.Thread):
 		
 		self.loginfo("Tracerouting")
 		child = None
-		self.__request["status"] = "tracerouting"
+		self.__request["status"] = "ongoing"
 		try:
 			#child = pexpect.spawn("sudo traceroute -f "+self.__common["first_ttl"]+ " -m "+self.__common["max_ttl"]+ " -n "+self.__request["target"])
-			cmd = "ssh -tt -l "+self.__common["remotel"]+" "+ self.__request['vp'] + " \"traceroute -n "+self.__request["target"]+" \" "
+			cmd = "ssh -o StrictHostKeyChecking=no -i "+self.__common['key']+" -tt -l "+self.__common["remotel"]+" "+ self.__request['vp'] + " \"traceroute -n "+self.__request["target"]+" \" "
 			self.loginfo(cmd)
 			
 			child = pexpect.spawn(cmd)
@@ -175,7 +167,7 @@ class TracerouteManager(threading.Thread):
 			
 			self.__raw = tr_output
 			self.loginfo("Parsing")
-			self.__request["status"] = "parsing"
+			#self.__request["status"] = "ongoing"
 			tr_final = self.parser_tr_output(self.__raw)
 			
 			self.__request["hops"] = tr_final
@@ -195,6 +187,9 @@ class TracerouteManager(threading.Thread):
 			if child:
 				child.terminate(force=True)
 				child.close()		
+		
+		#closing DBManager
+		self.__dbmanager.close()
 		
 		self.loginfo("Quitting")
 
@@ -238,37 +233,32 @@ if __name__ == '__main__':
 	
 	request = {'status':"ongoing", 'target':"143.225.229.127", 'errors':[], 'id':11, 'vp':'host2.planetlab.informatik.tu-darmstadt.de'}
 	
-	conn = None
-	cc = None
+	dbmanager = DBManager(common)
+	sql = "INSERT INTO traceroutes (status, vp, target, errors,json,raw) VALUES (%s,%s,%s,%s,%s)"%(request['status'],request["vp"], request['target'],"|".join(request['errors']), json.dumps(request), '')
+	
+   	cc = None
 	try:
-		#create a new row and take the id		
-		conn = sqlite3.connect(common["db.path"])
-		cc = conn.cursor()
-
-		#pdata = cPickle.dumps(request, cPickle.HIGHEST_PROTOCOL)
-		cc.execute('INSERT INTO traceroutes (status, vp, target, errors,json,raw) VALUES (?,?,?,?,?)', (request['status'],request["vp"], request['target'],"|".join(request['errors']), json.dumps(request), ''))
+		
+		cc = db.manager(sql)
 		if request['status'] != "failed":
 			request['id'] = cc.lastrowid
-		conn.commit()
+				
+	except Exception, ee:
+		request['status'] != "failed"
+		request['errors'].append(str(ee))
+		request['id'] = -1
 
+	finally:
+		if cc:
+			cc.close()
+			
+
+	if request['status'] != "failed":
 		tt = TracerouteManager(request, logger, common)
 		tt.start()
 		
 		while tt.isAlive():
 			tt.join(timeout=5)
 			
-				
-	except Exception, ee:
-		request['status'] != "failed"
-		request['errors'].append(str(ee))
-		request['id'] = -1
-		print str(ee)
-
-	finally:
-		if cc:
-			cc.close()
-			
-		if conn:
-			conn.close()
 
 
