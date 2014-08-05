@@ -102,7 +102,7 @@ class PLService(object):
 			
 			self.__dbmanager = DBManager(self.__common)			
 			
-			sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int,  primary key(vp) )'
+			sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int, fails int default 0, primary key(vp) )'
 			self.logdebug(sql)
 			self.__dbmanager.execute(sql)
 			
@@ -134,12 +134,13 @@ class PLService(object):
 			request = {'errors':[], 'result':[], 'code':-1} 
 			
 			if not asn:
-				sql = 'SELECT vp, asn FROM vps WHERE active=1'
+				sql = 'SELECT vp, asn FROM vps WHERE active=1 and fails<%s'%(str(self.__common["consecutivefails"]))
 			else:
-				sql = 'SELECT vp, asn FROM  vps WHERE active=1 AND asn=%s'%(str(asn))
+				sql = 'SELECT vp, asn FROM  vps WHERE active=1 AND asn=%s AND fails<%s'%(str(asn), str(self.__common["consecutivefails"]))
 
 			self.logdebug(sql)
 			cc = None
+			self.__mutex.acquire()
 			try:
 				cc = self.__dbmanager.execute(sql)
 				vps = cc.fetchall()
@@ -154,7 +155,8 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
-					
+				self.__mutex.release()
+			
 			return request
 
 
@@ -163,9 +165,10 @@ class PLService(object):
 			
 			request = {'errors':[], 'result':[], 'code':-1} 
 
-			sql = 'SELECT asn FROM vps WHERE active=1'
+			sql = 'SELECT asn FROM vps WHERE active=1 and fails<%s'%(str(self.__common["consecutivefails"]))
 			cc = None
-			self.logdebug(sql)			
+			self.logdebug(sql)	
+			self.__mutex.acquire()		
 			try:
 				cc = self.__dbmanager.execute(sql)
 				asn = cc.fetchall()
@@ -180,7 +183,8 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
-					
+				self.__mutex.release()
+				
 			return request
 
 			
@@ -208,6 +212,7 @@ class PLService(object):
 			sql = "SELECT * from vps where vp='%s'"%(request['vp'])
 			cc = None
 			self.logdebug(sql)
+			self.__mutex.acquire()
 			try:
 				cc = self.__dbmanager.execute(sql)
 				data = cc.fetchone()				
@@ -219,7 +224,7 @@ class PLService(object):
 					self.logerror("Failure: "+json.dumps(request))
 
 				
-				elif data[2]==0:
+				elif data[2]==0 or data[3]>int(self.__common["consecutivefails"]):
 					request['status'] = 'failed'
 					request['id'] = -1
 					request['errors'].append('Not active vantage point')
@@ -234,8 +239,8 @@ class PLService(object):
 			
 			finally:
 				if cc: cc.close()
+				self.__mutex.release()
 				
-
 
 			# submit
 			sql = 	"INSERT INTO traceroutes (status,vp,target, errors,json,raw) VALUES ('%s','%s','%s','%s','%s','%s')"%(request['status'],request['vp'], request['target'],"|".join(request['errors']), json.dumps(request), '')
@@ -277,6 +282,7 @@ class PLService(object):
 			self.logdebug(sql)
 			
 			cc = None
+			self.__mutex.acquire()
 			try:
 				cc = self.__dbmanager.execute(sql)
 				data = cc.fetchone()
@@ -291,6 +297,7 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
+				self.__mutex.release()
 				
 			return res
 				
@@ -304,7 +311,7 @@ class PLService(object):
 			self.logdebug(sql)
 			
 			cc = None
-			
+			self.__mutex.acquire()
 			try:
 				cc = self.__dbmanager.execute(sql)
 				data = cc.fetchone()
@@ -319,11 +326,11 @@ class PLService(object):
 			finally:
 				if cc:
 					cc.close()
-									
+				self.__mutex.release()
+				
 			return res
 			
 	
-		
 
 		def run(self):
 

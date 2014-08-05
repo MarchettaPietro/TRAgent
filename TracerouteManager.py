@@ -84,11 +84,30 @@ class TracerouteManager(threading.Thread):
 		self.loginfo("Stopping.")
 		self.__stop = True
 		
+	#def remove_node(self, vp):
+		#""" set as unactive a node in case of failure """
+
+		#cc = None
+		#sql = "UPDATE vps SET active=0 WHERE vp='%s'"%(vp)
+		#self.logdebug(sql)
+				
+		#try:
+			#cc = self.__dbmanager.execute(sql)
+		
+		#except Exception, ee:
+			#self.__request['status'] != "failed"
+			#self.__request['errors'].append(str(ee))
+			#self.logerror("Failure: "+json.dumps(self.__request))
+
+		#finally:
+			#if cc:
+				#cc.close()
+
 	def remove_node(self, vp):
 		""" set as unactive a node in case of failure """
 
 		cc = None
-		sql = "UPDATE vps SET active=0 WHERE vp=%s"%(vp)
+		sql = "UPDATE vps SET fails=fails+1 WHERE vp='%s'"%(vp)
 		self.logdebug(sql)
 				
 		try:
@@ -103,6 +122,26 @@ class TracerouteManager(threading.Thread):
 			if cc:
 				cc.close()
 				
+
+	def reset_node(self, vp):
+		""" set as unactive a node in case of failure """
+
+		cc = None
+		sql = "UPDATE vps SET fails=0 WHERE vp='%s'"%(vp)
+		self.logdebug(sql)
+				
+		try:
+			cc = self.__dbmanager.execute(sql)
+		
+		except Exception, ee:
+			self.__request['status'] != "failed"
+			self.__request['errors'].append(str(ee))
+			self.logerror("Failure: "+json.dumps(self.__request))
+
+		finally:
+			if cc:
+				cc.close()
+
 		
 	def update_db(self):
 		"""Update destination request in db"""
@@ -119,7 +158,7 @@ class TracerouteManager(threading.Thread):
 			self.__request['status'] != "failed"
 			self.__request['errors'].append(str(ee))
 			self.logerror("Failure: "+json.dumps(self.__request))
-
+						
 		finally:
 			if cc:
 				cc.close()
@@ -171,12 +210,18 @@ class TracerouteManager(threading.Thread):
 			tr_final = self.parser_tr_output(self.__raw)
 			
 			self.__request["hops"] = tr_final
-			self.__request["status"] = "success"
+			
+			if len(self.__request["hops"]) == 0:
+				raise Exception("No Trace")
+			else:
+				self.__request["status"] = 'success'
+			
 			self.loginfo("Updating")
 			self.update_db()
+			self.reset_node(self.__request['vp'])
 			
 		except Exception, ee:
-			self.__request['status'] != "failed"
+			self.__request['status'] = "failed"
 			self.__request['errors'].append(str(ee))
 			self.logerror("Failure: "+json.dumps(self.__request))
 			self.remove_node(self.__request['vp'])

@@ -87,8 +87,14 @@ class Dispatcher(threading.Thread):
 				self.__clean_tpool()
 				continue
 			
-			self.loginfo("Launching TracerouteManager on "+str(in_request))
 
+			while not self.__stop and len(self.__tpool) > int(self.__common["maxthreads"]):
+				self.__clean_tpool()
+				self.loginfo("Reached maximum number of concurrent threads: "+str(len(self.__tpool)) )
+				time.sleep(5)
+
+			self.loginfo("Launching TracerouteManager on "+str(in_request))
+						
 			tt = TracerouteManager(in_request, self.__logger, self.__common)
 			tt.start()
 			self.__tpool.append(tt)		

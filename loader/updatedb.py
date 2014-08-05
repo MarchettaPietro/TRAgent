@@ -54,9 +54,9 @@ if __name__ == "__main__":
 	
 	for nn in node2as:
 		if nn in nodes_success:
-			sql = "REPLACE INTO vps(vp,asn,active) VALUES('%s',%s,1)"%(nn, node2as[nn])
+			sql = "REPLACE INTO vps(vp,asn,active,fails) VALUES('%s',%s,1,0)"%(nn, node2as[nn])
 		else:
-			sql = "REPLACE INTO vps(vp,asn,active) VALUES('%s',%s,0)"%(nn, node2as[nn])
+			sql = "REPLACE INTO vps(vp,asn,active,fails) VALUES('%s',%s,0,0)"%(nn, node2as[nn])
 		
 		#print sql
 		cur.execute(sql)
