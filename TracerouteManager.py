@@ -205,6 +205,8 @@ class TracerouteManager(threading.Thread):
 				#tr_output = content_file.read()
 			
 			self.__raw = tr_output
+			self.__raw.replace('\'','"')
+			
 			self.loginfo("Parsing")
 			#self.__request["status"] = "ongoing"
 			tr_final = self.parser_tr_output(self.__raw)

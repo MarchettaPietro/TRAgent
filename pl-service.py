@@ -282,6 +282,12 @@ class PLService(object):
 			res = {'status':'', 'errors':[], 'code':-1}
 			sql = "SELECT status FROM traceroutes WHERE mid=%s"%(str(m_id))
 			self.logdebug(sql)
+
+			if m_id<0:
+				self.logerror("Status Error:")
+				res['errors'].append('Not valid ID.')
+				res['status'] = 'failed'
+				return res
 			
 			cc = None
 			self.__mutex.acquire()

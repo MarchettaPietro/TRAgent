@@ -46,7 +46,8 @@ if __name__ == "__main__":
 	conn.autocommit(True)
 	
 	#create tables if not exist
-	sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int,  primary key(vp) )'
+	#sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int,  primary key(vp) )'
+	sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int, fails int, primary key(vp) )'
 	cur.execute(sql)
 	
 	sql = 'CREATE TABLE IF NOT EXISTS traceroutes (mid int auto_increment, status text, vp text, target text, errors text, json text, raw text, primary key (mid))'
