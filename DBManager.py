@@ -14,22 +14,30 @@ class DBManager():
 	def __init__(self,  common):
 			
 		self.__common = common
-				
-		self.__con = mdb.connect(self.__common["db.host"], self.__common["db.user"], self.__common["db.password"], self.__common["db.db"]);			
-		self.__con.autocommit(True)
-			
+		self.__con = None
 		self.__stop = False	
 		self.complete = False
+		
+		self.connect()
 
-
+	def connect(self)
+		self.__con = mdb.connect(self.__common["db.host"], self.__common["db.user"], self.__common["db.password"], self.__common["db.db"]);			
+		self.__con.autocommit(True)
+	
+	
 	def execute(self, sql):
 		"""Execute sql statement on database"""
-		
-		self.__cur = self.__con.cursor()
-		self.__cur.execute(sql)
-		
-		return self.__cur
-		
+
+		try:
+		  cursor = self.__con.cursor()
+		  cursor.execute(sql)
+		except (AttributeError, MySQLdb.OperationalError):
+		  self.connect()
+		  cursor = self.__con.cursor()
+		  cursor.execute(sql)
+		return cursor
+
+				
 	def get_connection(self):
 		return self.__con
 		
@@ -40,4 +48,5 @@ class DBManager():
 		if self.__con:
 			self.__con.close()
 		
+
 

@@ -104,11 +104,13 @@ class PLService(object):
 			
 			sql = 'CREATE TABLE IF NOT EXISTS vps (vp varchar(200) not null, asn int, active int, fails int default 0, primary key(vp) )'
 			self.logdebug(sql)
-			self.__dbmanager.execute(sql)
+			curr = self.__dbmanager.execute(sql)
+			curr.close()
 			
 			sql = 'CREATE TABLE IF NOT EXISTS traceroutes (mid int auto_increment, status text, vp text, target text, errors text, json text, raw text, primary key (mid))'
 			self.logdebug(sql)
-			self.__dbmanager.execute(sql)
+			curr = self.__dbmanager.execute(sql)
+			curr.close()
 
 			#create a dispacter and share the queue
 			self.__Dispatcher = Dispatcher(self.__requests, self.__logger, self.__common)
