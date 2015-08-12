@@ -10,74 +10,48 @@
 
 
 import xmlrpclib
+#import jsonrpclib
 import time
 import ast
 import json
 import pprint
 
 from optparse import OptionParser
-import xmlrpclib,sys
+import sys
 
 if __name__ == "__main__":	
 
-	#usages = "usage: %prog  <File containing the query>" 
-	#parser = OptionParser(usage=usages) 
-	#(options, args) = parser.parse_args()
-
-	#if not len(args)==1:  
-	   #parser.print_help()
-	   #sys.exit(0)
+	s = xmlrpclib.ServerProxy('http://parruccone75:patriziaasparago@143.225.229.145:64751/RPC2')
+	#s = jsonrpclib.Server('http://parruccone75:patriziaasparago@143.225.229.145:64751')
 	
-	#with open(args[0], 'r') as content_file:
-		#query = content_file.read()
+	try:
+		res = s.active()
+		print res,len(res['result'])
 	
-	#s = xmlrpclib.ServerProxy('http://parruccone75:patriziaasparago@sim15.usc.edu:64751')
-	s = xmlrpclib.Server('http://parruccone75:patriziaasparago@143.225.229.127:64751')
-	#s = xmlrpclib.Server('http://parruccone75:patriziaasparago@10.0.3.15:64751')
+	except xmlrpclib.Fault as err:
+		print "A fault occurred"
+		print "Fault code: %d" % err.faultCode
+		print "Fault string: %s" % err.faultString
+	except xmlrpclib.ProtocolError as err:
+		print "A protocol error occurred"
+		print "URL: %s" % err.url
+		print "HTTP/HTTPS headers: %s" % err.headers
+		print "Error code: %d" % err.errcode
+		print "Error message: %s" % err.errmsg
+    
 	
-	res = s.active()
-	print res,len(res['result'])
+	#res = s.active(150)
+	#print res,len(res['result'])
 	
-	res = s.active(150)
-	print res,len(res['result'])
+	#res = s.active(680)
+	#print res,len(res['result'])
 	
-	res = s.active(680)
-	print res,len(res['result'])
+	#res = s.ases()
+	#print res,len(res['result'])
 	
-	res = s.ases()
-	print res,len(res['result'])
-	
-	raw_input()
-
-	#id =  s.submit('host2.planetlab.informatik.tu-darmstadt.de','143.225.229.127')
-	##id =  s.submit('143.225.229.127','149.3.176.25')
-	#if id<0:
-		#print "Obtained measurement ID: ", id
-		#sys.exit(1)
-		
-	#res = {'status':['ongoing'], 'erros':[]}
-	
-	#print "%s"%("#Status")
-	#while res["status"][0] != "success" and res["status"][0] != "failed":
-		#res = s.status(id)
-		#print res
-		#time.sleep(2)
-
-	##print res
-	#if res["status"][0] == "success":
-		#res = s.results(id)
-		#print res
-		#dd = json.loads(res['result'][0])
-		#pprint.pprint(dd)
-		
-		###dic = ast.literal_eval(res['result'])
-		###pprint.pprint(dic)
-		
-
 	#raw_input()
 
 	id =  s.submit('planetlab1.cs.du.edu','143.225.229.127')
-	#id =  s.submit('143.225.229.127','149.3.176.25')
 	if id<0:
 		print "Obtained measurement ID: ", id
 		sys.exit(1)
@@ -85,17 +59,15 @@ if __name__ == "__main__":
 	res = {'status':['ongoing'], 'erros':[]}
 	
 	print "%s"%("#Status")
-	while res["status"][0] != "success" and res["status"][0] != "failed":
+	while res["status"] != "success" and res["status"] != "failed":
 		res = s.status(id)
 		print res
 		time.sleep(2)
 
 	#print res
-	if res["status"][0] == "success":
+	if res["status"] == "success":
 		res = s.results(id)
 		print res
-		dd = json.loads(res['result'][0])
-		pprint.pprint(dd)
 		
 		##dic = ast.literal_eval(res['result'])
 		##pprint.pprint(dic)
