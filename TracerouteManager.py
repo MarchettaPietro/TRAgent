@@ -19,7 +19,7 @@ from DBManager import DBManager
 
 """ Launch and parse traceroutes from planetlab nodes through an ssh connection """
 
-#FROM THIS:
+# FROM THIS:
 
 ##[uninaonelab_merlin@host2 ~]$ sudo traceroute -n 143.225.229.127
 #traceroute to 143.225.229.127 (143.225.229.127), 30 hops max, 60 byte packets
@@ -119,9 +119,9 @@ class TracerouteManager(threading.Thread):
 
     def update_db(self):
         """Update destination request in db"""
-		
-        self.__raw = self.__raw.replace('\'', '')		
-		
+
+        self.__raw = self.__raw.replace('\'', '')
+
         cc = None
         sql = "UPDATE traceroutes SET status='%s', errors='%s', json='%s', raw='%s' WHERE mid=%s" % (
             self.__request['status'], " ".join(self.__request['errors']), json.dumps(self.__request), self.__raw,
@@ -157,10 +157,24 @@ class TracerouteManager(threading.Thread):
                 continue
 
             ips = re.findall(r'[0-9]+(?:\.[0-9]+){3}', ll)
+
             if len(ips) == 0:
-                tr_final.append("0.0.0.0")
+                ip = "0.0.0.0"
+                latency = 0.0
+
             else:
-                tr_final.append(ips[0])
+                ip = ips[0]
+                latency = 0.0
+
+                tmp = ll.split()
+
+                if "ms" in ll:
+                    try:
+                        latency = float(tmp[tmp.index("ms") - 1])
+                    except:
+                        self.logwarn("No latency in this line: " + ll.strip())
+
+                tr_final.append((ip, latency))
 
         return tr_final
 
@@ -261,7 +275,7 @@ if __name__ == '__main__':
     cc = None
     try:
 
-        cc = db.manager(sql)
+        cc = dbmanager.manager(sql)
         if request['status'] != "failed":
             request['id'] = cc.lastrowid
 
